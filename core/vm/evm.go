@@ -91,6 +91,7 @@ type Rules struct {
 	IsAspenPartTwo bool
 	IsFicus        bool
 	IsCornus       bool
+	IsCacti        bool
 }
 
 type Block struct {
@@ -160,6 +161,10 @@ func (self *EVM) SetBlock(blk *Block, rules Rules) (rules_changed bool) {
 		self.rules_initialized = true
 	}
 	switch {
+	case rules.IsCacti:
+		self.precompiles = PrecompiledContractsFicus
+		self.instruction_set = cactiInstructionSet
+		self.gas_table = GasTableCalifornicum
 	case rules.IsFicus:
 		self.precompiles = PrecompiledContractsFicus
 		self.instruction_set = ficusInstructionSet
