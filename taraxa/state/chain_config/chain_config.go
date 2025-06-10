@@ -78,6 +78,8 @@ type HardforksConfig struct {
 	AspenHf                      AspenHfConfig
 	FicusHf                      FicusHfConfig
 	CornusHf                     CornusHfConfig
+	SoleiroliaHf                 SoleiroliaHfConfig
+	CactiHf                      CactiHfConfig
 }
 
 func (c *HardforksConfig) IsOnFixClaimAllHardfork(block types.BlockNum) bool {
