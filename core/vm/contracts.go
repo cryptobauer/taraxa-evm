@@ -28,6 +28,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
+	"github.com/open-quantum-safe/liboqs-go/oqs"
 	"golang.org/x/crypto/ripemd160"
 
 	"github.com/Taraxa-project/taraxa-evm/common"
@@ -104,6 +105,29 @@ var PrecompiledContractsFicus = Precompiles{
 	&bls12381Pairing{},    // Position 17, address 0x11
 	&bls12381MapG1{},      // Position 18, address 0x12
 	&bls12381MapG2{},      // Position 19, address 0x13
+}
+
+var PrecompiledContractsCacti = Precompiles{
+	&ecrecover{},          // Position 1, address 0x01
+	&sha256hash{},         // Position 2, address 0x02
+	&ripemd160hash{},      // Position 3, address 0x03
+	&dataCopy{},           // Position 4, address 0x04
+	&bigModExp{},          // Position 5, address 0x05
+	&bn256Add{},           // Position 6, address 0x06
+	&bn256ScalarMul{},     // Position 7, address 0x07
+	&bn256Pairing{},       // Position 8, address 0x08
+	&blake2F{},            // Position 9, address 0x09
+	nil,                   // Position 10, address 0x0a (&kzgPointEvaluation{})
+	&bls12381G1Add{},      // Position 11, address 0x0b
+	&bls12381G1Mul{},      // Position 12, address 0x0c
+	&bls12381G1MultiExp{}, // Position 13, address 0x0d
+	&bls12381G2Add{},      // Position 14, address 0x0e
+	&bls12381G2Mul{},      // Position 15, address 0x0f
+	&bls12381G2MultiExp{}, // Position 16, address 0x10
+	&bls12381Pairing{},    // Position 17, address 0x11
+	&bls12381MapG1{},      // Position 18, address 0x12
+	&bls12381MapG2{},      // Position 19, address 0x13
+	&falcon512{},          // Position 20, address 0x14
 }
 
 // ECRECOVER implemented as a native contract.
@@ -950,4 +974,29 @@ func (c bls12381MapG2) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return encodePointG2(&r), nil
+}
+
+// FALCON512 implementation precompile
+type falcon512 struct{}
+
+func (c *falcon512) RequiredGas(ctx CallFrame, evm *EVM) uint64 {
+	return uint64(1)
+}
+
+const (
+	falcon512SignatureName   = "Falcon-512"
+	falcon512MethodSignature = 0xde8f50a1 // verify(bytes,bytes,bytes)
+	falcon512PublicKeyLength = 897
+)
+
+// returns bytes32(0) if signature is valid, bytes32(1) otherwise
+func (c *falcon512) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
+	verifier := oqs.Signature{}
+
+	defer verifier.Clean() // clean up even in case of panic
+
+	if err := verifier.Init(falcon512SignatureName, nil); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
