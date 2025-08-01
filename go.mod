@@ -10,6 +10,7 @@ require (
 	github.com/ethereum/go-ethereum v1.13.10
 	github.com/holiman/uint256 v1.2.4
 	github.com/linxGnu/grocksdb v1.9.8
+	github.com/open-quantum-safe/liboqs-go v0.0.0-20250119172907-28b5301df438
 	github.com/otiai10/copy v1.9.0
 	github.com/schollz/progressbar/v3 v3.3.3
 	github.com/stretchr/testify v1.10.0
