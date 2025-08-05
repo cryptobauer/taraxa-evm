@@ -1009,7 +1009,7 @@ func (c *falcon512) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
 	if len(input) < 4 { // verifies method signature
 		return nil, errFalcon512InvalidMethodSignatureLength
 	}
-	if new(big.Int).SetBytes(getData(input, 0, 4)).Uint64() != falcon512MethodSignature {
+	if binary.BigEndian.Uint32(getData(input, 0, 4)) != uint32(falcon512MethodSignature) {
 		return nil, errFalconInvalidMethodSignature
 	}
 
