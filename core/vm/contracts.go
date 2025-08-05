@@ -28,7 +28,8 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
-	"github.com/open-quantum-safe/liboqs-go/oqs"
+	"github.com/pornin/go-fn-dsa/fndsa"
+
 	"golang.org/x/crypto/ripemd160"
 
 	"github.com/Taraxa-project/taraxa-evm/common"
@@ -980,23 +981,93 @@ func (c bls12381MapG2) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
 type falcon512 struct{}
 
 func (c *falcon512) RequiredGas(ctx CallFrame, evm *EVM) uint64 {
-	return uint64(1)
+	return uint64(len(ctx.Input)+31)/32*Falcon512PerWordGas + Falcon512BaseGas
 }
 
 const (
-	falcon512SignatureName   = "Falcon-512"
 	falcon512MethodSignature = 0xde8f50a1 // verify(bytes,bytes,bytes)
-	falcon512PublicKeyLength = 897
+)
+
+var (
+	// fndsa exposes fixed sizes per degree; compute them at init to avoid hardcoding.
+	falcon512LogN      uint = 9 // 2^9 = 512
+	falcon512SigLen         = fndsa.SignatureSize(falcon512LogN)
+	falcon512PubKeyLen      = fndsa.VerifyingKeySize(falcon512LogN)
+
+	errFalcon512InvalidMethodSignatureLength = errors.New("invalid input format")
+	errFalconInvalidMethodSignature          = errors.New("invalid method signature")
 )
 
 // returns bytes32(0) if signature is valid, bytes32(1) otherwise
 func (c *falcon512) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
-	verifier := oqs.Signature{}
+	input := ctx.Input
 
-	defer verifier.Clean() // clean up even in case of panic
+	// 32-byte digest per your convention: 0x...01 means invalid; 0x...00 means valid
+	digest := make([]byte, 32)
+	digest[31] = 1
 
-	if err := verifier.Init(falcon512SignatureName, nil); err != nil {
-		return nil, err
+	if len(input) < 4 { // verifies method signature
+		return nil, errFalcon512InvalidMethodSignatureLength
 	}
-	return nil, nil
+	if new(big.Int).SetBytes(getData(input, 0, 4)).Uint64() != falcon512MethodSignature {
+		return nil, errFalconInvalidMethodSignature
+	}
+
+	input = getData(input, 4, uint64(len(input)))
+	if len(input) < 96 {
+		return digest, nil
+	}
+
+	signatureOffset := new(big.Int).SetBytes(getData(input, 0, 32)).Uint64()
+	pubKeyOffset := new(big.Int).SetBytes(getData(input, 32, 32)).Uint64()
+	dataOffset := new(big.Int).SetBytes(getData(input, 64, 32)).Uint64()
+
+	if signatureOffset == 0 || pubKeyOffset == 0 || dataOffset == 0 {
+		return digest, nil
+	}
+
+	// --- signature ---
+	if len(input) < int(signatureOffset)+32 {
+		return digest, nil
+	}
+	signatureLength := new(big.Int).SetBytes(getData(input, signatureOffset, 32)).Uint64()
+	if signatureLength == 0 || len(input) < int(signatureOffset)+32+int(signatureLength) {
+		return digest, nil
+	}
+	signatureSlice := getData(input, signatureOffset+32, signatureLength)
+	// Enforce fixed-size FN-DSA-512 signatures.
+	if int(signatureLength) != falcon512SigLen {
+		return digest, nil
+	}
+
+	// --- public key ---
+	if len(input) < int(pubKeyOffset)+32 {
+		return digest, nil
+	}
+	pubKeyLength := new(big.Int).SetBytes(getData(input, pubKeyOffset, 32)).Uint64()
+	if pubKeyLength == 0 || len(input) < int(pubKeyOffset)+32+int(pubKeyLength) {
+		return digest, nil
+	}
+	pubKeySlice := getData(input, pubKeyOffset+32, pubKeyLength)
+	// Enforce fixed-size FN-DSA-512 verifying key.
+	if int(pubKeyLength) != falcon512PubKeyLen {
+		return digest, nil
+	}
+
+	// --- message data (raw; no prehash) ---
+	if len(input) < int(dataOffset)+32 {
+		return digest, nil
+	}
+	dataLength := new(big.Int).SetBytes(getData(input, dataOffset, 32)).Uint64()
+	if dataLength == 0 || len(input) < int(dataOffset)+32+int(dataLength) {
+		return digest, nil
+	}
+	dataSlice := getData(input, dataOffset+32, dataLength)
+
+	// Pure-Go FN-DSA verify (ctx = NONE, id = 0 => raw message).
+	ok := fndsa.Verify(pubKeySlice, fndsa.DOMAIN_NONE, 0, dataSlice, signatureSlice)
+	if ok {
+		digest[31] = 0
+	}
+	return digest, nil
 }
