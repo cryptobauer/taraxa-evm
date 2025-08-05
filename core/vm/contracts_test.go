@@ -453,7 +453,7 @@ var falcon512InvalidSignatureTests = []precompiledTest{
 	},
 }
 
-func BenchmarkPrecompiledFalcon512(b *testing.B) { benchJson("falconBenchVectors", "13", b) }
+func BenchmarkPrecompiledFalcon512(b *testing.B) { benchJson("falconBenchVectors", "14", b) }
 
 func TestPrecompileFalcon512MalformedInput(t *testing.T) {
 	for _, test := range falcon512MalformedInputTests {
