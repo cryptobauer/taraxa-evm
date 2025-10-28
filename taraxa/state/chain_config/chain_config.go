@@ -47,6 +47,17 @@ type SoleiroliaHfConfig struct {
 	TrxMaxGasLimit uint64
 }
 
+type CactiHfConfig struct {
+	BlockNum             uint64
+	LambdaMin            uint32 // [ms]
+	LambdaMax            uint32 // [ms]
+	LambdaDefault        uint32 // [ms]
+	LambdaChangeInterval uint32 // [number of blocks]
+	LambdaChange         uint32 // [ms]
+	BlockPropagationMin  uint32 // [ms]
+	BlockPropagationMax  uint32 // [ms]
+}
+
 // Leaving it here for next HF
 // type BambooRedelegation struct {
 // 	Validator common.Address
@@ -68,6 +79,7 @@ type HardforksConfig struct {
 	FicusHf                      FicusHfConfig
 	CornusHf                     CornusHfConfig
 	SoleiroliaHf                 SoleiroliaHfConfig
+	CactiHf                      CactiHfConfig
 }
 
 func (c *HardforksConfig) IsOnFixClaimAllHardfork(block types.BlockNum) bool {
@@ -100,6 +112,10 @@ func (c *HardforksConfig) IsOnCornusHardfork(block types.BlockNum) bool {
 
 func (c *HardforksConfig) IsCornusHardfork(block types.BlockNum) bool {
 	return block == c.CornusHf.BlockNum
+}
+
+func (c *HardforksConfig) IsOnCactiHardfork(block types.BlockNum) bool {
+	return block >= c.CactiHf.BlockNum
 }
 
 func isForked(fork_start, block_num types.BlockNum) bool {
