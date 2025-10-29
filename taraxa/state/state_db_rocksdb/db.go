@@ -44,6 +44,14 @@ const (
 	db_prune_buffer_max_size = 500000
 )
 
+// Write batch flush size for column (re)creation operations
+const db_write_batch_max_size = 100000
+
+// Merge thresholds for in-memory aggregation during rebuilds
+const main_trie_merge_threshold = 100000
+const acc_trie_keep_merge_threshold = 200000
+const acc_trie_keep_merge_interval = 10 * time.Second
+
 var versioned_read_columns = []state_db.Column{state_db.COL_acc_trie_value, state_db.COL_main_trie_value}
 
 type Opts = struct {
@@ -142,15 +150,18 @@ func (self *DB) RecreateColumn(column state_db.Column, nodes map[common.Hash][]b
 
 	batch := grocksdb.NewWriteBatch()
 	count := 0
+	pending := 0 // number of put ops currently batched
 	for node_to_keep, b := range nodes {
 		batch.PutCF(self.cf_handles[column], node_to_keep[:], b)
 		count++
-		if count%100000 == 0 {
+		pending++
+		if pending >= db_write_batch_max_size {
 			util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 			batch.Clear()
+			pending = 0
 		}
 	}
-	if count%100000 != 0 {
+	if pending > 0 {
 		util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 	}
 	batch.Destroy()
@@ -221,8 +232,7 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 	rootsCh := make(chan common.Hash, workers*2)
 	nodes_to_keep := make(map[common.Hash][]byte)
 	var nodesMu sync.Mutex
-	const mergeThreshold = 100000
-	const logEvery = 1_000_000
+	// use package-level main_trie_merge_threshold
 	var wg sync.WaitGroup
 
 	for w := 0; w < workers; w++ {
@@ -246,7 +256,7 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 			for root := range rootsCh {
 				extReader.ForEachMainNodeHashByRoot(&root, func(h *common.Hash, b []byte) {
 					local[*h] = common.CopyBytes(b)
-					if len(local) >= mergeThreshold {
+					if len(local) >= main_trie_merge_threshold {
 						merge()
 					}
 				})
@@ -374,7 +384,7 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 					state_db.ExtendedReader{rdr}.ForEachAccountNodeHashByRoot(&root, func(h *common.Hash, b []byte) {
 						local[*h] = struct{}{}
 						processed++
-						if processed%200000 == 0 || time.Since(lastMerge) > 10*time.Second {
+						if processed%acc_trie_keep_merge_threshold == 0 || time.Since(lastMerge) > acc_trie_keep_merge_interval {
 							merge()
 						}
 					})
@@ -395,6 +405,7 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 			return
 		}
 		deleted := 0
+		pending := 0 // number of delete ops currently batched
 		batch := grocksdb.NewWriteBatch()
 		for ; itr2.Valid(); itr2.Next() {
 			kSlice := itr2.Key()
@@ -404,14 +415,16 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 			if _, ok := keepSet[h]; !ok {
 				batch.DeleteCF(self.cf_handles[state_db.COL_acc_trie_node], h[:])
 				deleted++
-				if deleted%500000 == 0 {
+				pending++
+				if pending >= db_prune_buffer_max_size {
 					util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 					batch.Clear()
+					pending = 0
 				}
 			}
 		}
 		itr2.Close()
-		if deleted > 0 {
+		if pending > 0 {
 			util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 		}
 		batch.Destroy()
