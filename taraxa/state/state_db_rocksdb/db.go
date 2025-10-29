@@ -3,12 +3,10 @@ package state_db_rocksdb
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"math/big"
 	"runtime"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Taraxa-project/taraxa-evm/common"
@@ -142,7 +140,6 @@ func (self *DB) RecreateColumn(column state_db.Column, nodes map[common.Hash][]b
 	}
 	self.cf_handles[column] = acc_trie_handle
 
-	fmt.Printf("[prune] RecreateColumn(col=%d): inserting %d nodes...\n", column, len(nodes))
 	batch := grocksdb.NewWriteBatch()
 	count := 0
 	for node_to_keep, b := range nodes {
@@ -151,16 +148,13 @@ func (self *DB) RecreateColumn(column state_db.Column, nodes map[common.Hash][]b
 		if count%100000 == 0 {
 			util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 			batch.Clear()
-			fmt.Printf("[prune] RecreateColumn(col=%d): inserted %d nodes...\n", column, count)
 		}
 	}
 	if count%100000 != 0 {
 		util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 	}
 	batch.Destroy()
-	fmt.Printf("[prune] RecreateColumn(col=%d): insert done. Compacting...\n", column)
 	self.db.CompactRangeCF(self.cf_handles[column], range32)
-	fmt.Printf("[prune] RecreateColumn(col=%d): compaction finished.\n", column)
 }
 
 func (self *DB) deleteStateValues(blk_num types.BlockNum) {
@@ -178,14 +172,9 @@ func (self *DB) deleteStateValues(blk_num types.BlockNum) {
 	itr.SeekToFirst()
 	if !itr.Valid() {
 		itr.Close()
-		fmt.Printf("[prune] acc_trie_value: nothing to prune at blk %d\n", blk_num)
 		return
 	}
 
-	start := time.Now()
-	processed := 0
-	deleted := 0
-	logEvery := 1_000_000
 	for {
 		k := itr.Key()
 		copy(prev_key, k.Data())
@@ -194,17 +183,14 @@ func (self *DB) deleteStateValues(blk_num types.BlockNum) {
 		if !itr.Valid() {
 			break
 		}
-		processed++
 		if bytes.Compare(prev_key[0:common.HashLength], itr.Key().Data()[0:common.HashLength]) == 0 {
 			ver_blk_num := binary.BigEndian.Uint64(itr.Key().Data()[common.HashLength:common.VersionedKeyLength])
 			if ver_blk_num < blk_num {
 				set_account_storage_value_to_prune = append(set_account_storage_value_to_prune, common.CopyBytes(prev_key))
-				deleted++
 			}
 		}
 
 		if len(set_account_storage_value_to_prune) > db_prune_buffer_max_size {
-			fmt.Printf("[prune] acc_trie_value: flushing %d deletions (processed=%d)\n", len(set_account_storage_value_to_prune), processed)
 			batch := grocksdb.NewWriteBatch()
 			for _, value_to_remove := range set_account_storage_value_to_prune {
 				batch.DeleteCF(self.cf_handles[state_db.COL_acc_trie_value], value_to_remove)
@@ -213,12 +199,6 @@ func (self *DB) deleteStateValues(blk_num types.BlockNum) {
 			batch.Destroy()
 			set_account_storage_value_to_prune = set_account_storage_value_to_prune[:0]
 		}
-		if processed%logEvery == 0 {
-			fmt.Printf("[prune] acc_trie_value: processed=%d deleted=%d elapsed=%s\n", processed, deleted, time.Since(start))
-		}
-	}
-	if err := itr.Err(); err != nil {
-		fmt.Printf("[prune] acc_trie_value: iterator error: %v\n", err)
 	}
 	itr.Close()
 
@@ -231,11 +211,9 @@ func (self *DB) deleteStateValues(blk_num types.BlockNum) {
 		batch.Destroy()
 	}
 	self.db.CompactRangeCF(self.cf_handles[state_db.COL_acc_trie_value], range40)
-	fmt.Printf("[prune] acc_trie_value: done. processed=%d deleted=%d took=%s\n", processed, deleted, time.Since(start))
 }
 
 func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num types.BlockNum) {
-	fmt.Printf("[prune] main_trie_node: collecting nodes for %d roots...\n", len(*state_root_to_keep))
 	workers := runtime.NumCPU()
 	if workers < 1 {
 		workers = 1
@@ -243,7 +221,6 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 	rootsCh := make(chan common.Hash, workers*2)
 	nodes_to_keep := make(map[common.Hash][]byte)
 	var nodesMu sync.Mutex
-	var totalCollected uint64
 	const mergeThreshold = 100000
 	const logEvery = 1_000_000
 	var wg sync.WaitGroup
@@ -255,7 +232,6 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 			reader := state_db.GetBlockStateReader(self, blk_num)
 			extReader := state_db.ExtendedReader{reader}
 			local := make(map[common.Hash][]byte)
-			lastLog := time.Now()
 			merge := func() {
 				if len(local) == 0 {
 					return
@@ -273,11 +249,6 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 					if len(local) >= mergeThreshold {
 						merge()
 					}
-					total := atomic.AddUint64(&totalCollected, 1)
-					if total%logEvery == 0 || time.Since(lastLog) > 10*time.Second {
-						fmt.Printf("[prune] main_trie_node: collected %d nodes so far...\n", total)
-						lastLog = time.Now()
-					}
 				})
 			}
 			merge()
@@ -288,9 +259,7 @@ func (self *DB) recreateMainTrie(state_root_to_keep *[]common.Hash, blk_num type
 	}
 	close(rootsCh)
 	wg.Wait()
-	fmt.Printf("[prune] main_trie_node: will keep %d nodes. Recreating column...\n", len(nodes_to_keep))
 	self.RecreateColumn(state_db.COL_main_trie_node, nodes_to_keep)
-	fmt.Printf("[prune] main_trie_node: column recreated.\n")
 }
 
 func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
@@ -310,14 +279,9 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 	itr.SeekToFirst()
 	if !itr.Valid() {
 		itr.Close()
-		fmt.Printf("[prune] main_trie_value: nothing to prune at blk %d\n", blk_num)
 		return
 	}
 	prev_key := make([]byte, common.VersionedKeyLength)
-	start := time.Now()
-	processed := 0
-	deleted := 0
-	logEvery := 1_000_000
 	for {
 		k := itr.Key()
 		copy(prev_key, k.Data())
@@ -332,13 +296,11 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 			}
 			break
 		}
-		processed++
 		if bytes.Compare(prev_key[0:common.HashLength], itr.Key().Data()[0:common.HashLength]) == 0 {
 			//Only prune the previous value if current value for the same account is below blk_num
 			ver_blk_num := binary.BigEndian.Uint64(itr.Key().Data()[common.HashLength:common.VersionedKeyLength])
 			if ver_blk_num < blk_num {
 				set_value_to_prune = append(set_value_to_prune, common.CopyBytes(prev_key))
-				deleted++
 			} else {
 				if account.StorageRootHash != nil {
 					set_storage_root_to_keep = append(set_storage_root_to_keep, *account.StorageRootHash)
@@ -351,7 +313,6 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 		}
 
 		if len(set_value_to_prune) > db_prune_buffer_max_size {
-			fmt.Printf("[prune] main_trie_value: flushing %d deletions (processed=%d)\n", len(set_value_to_prune), processed)
 			batch := grocksdb.NewWriteBatch()
 			for _, value_to_remove := range set_value_to_prune {
 				batch.DeleteCF(self.cf_handles[state_db.COL_main_trie_value], value_to_remove)
@@ -360,12 +321,6 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 			batch.Destroy()
 			set_value_to_prune = set_value_to_prune[:0]
 		}
-		if processed%logEvery == 0 {
-			fmt.Printf("[prune] main_trie_value: processed=%d deleted=%d elapsed=%s\n", processed, deleted, time.Since(start))
-		}
-	}
-	if err := itr.Err(); err != nil {
-		fmt.Printf("[prune] main_trie_value: iterator error: %v\n", err)
 	}
 	itr.Close()
 
@@ -373,7 +328,6 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("[prune] main_trie_value: deleting %d keys...\n", len(set_value_to_prune))
 		if len(set_value_to_prune) > 0 {
 			batch := grocksdb.NewWriteBatch()
 			for _, value_to_remove := range set_value_to_prune {
@@ -383,13 +337,11 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 			batch.Destroy()
 		}
 		self.db.CompactRangeCF(self.cf_handles[state_db.COL_main_trie_value], range40)
-		fmt.Printf("[prune] main_trie_value: deletion + compact done.\n")
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("[prune] acc_trie_node: computing keep set from %d storage roots...\n", len(set_storage_root_to_keep))
 		workers := runtime.NumCPU()
 		if workers < 1 {
 			workers = 1
@@ -435,18 +387,14 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 		}
 		close(rootsCh)
 		wwg.Wait()
-		fmt.Printf("[prune] acc_trie_node: keep set built. size=%d. Filtering column...\n", len(keepSet))
 
 		itr2 := self.db.NewIteratorCF(self.opts_r_itr, self.cf_handles[state_db.COL_acc_trie_node])
 		itr2.SeekToFirst()
 		if !itr2.Valid() {
 			itr2.Close()
-			fmt.Printf("[prune] acc_trie_node: column empty, nothing to filter.\n")
 			return
 		}
-		processedKeys := 0
 		deleted := 0
-		logEvery := 1_000_000
 		batch := grocksdb.NewWriteBatch()
 		for ; itr2.Valid(); itr2.Next() {
 			kSlice := itr2.Key()
@@ -459,16 +407,8 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 				if deleted%500000 == 0 {
 					util.PanicIfNotNil(self.db.Write(self.latest_state.opts_w, batch))
 					batch.Clear()
-					fmt.Printf("[prune] acc_trie_node: deleted %d keys so far...\n", deleted)
 				}
 			}
-			processedKeys++
-			if processedKeys%logEvery == 0 {
-				fmt.Printf("[prune] acc_trie_node: processed=%d deleted=%d\n", processedKeys, deleted)
-			}
-		}
-		if err := itr2.Err(); err != nil {
-			fmt.Printf("[prune] acc_trie_node: iterator error: %v\n", err)
 		}
 		itr2.Close()
 		if deleted > 0 {
@@ -483,20 +423,17 @@ func (self *DB) deleteStateRoot(blk_num types.BlockNum) {
 		}
 		copy(range32.Limit, range_limit[0:common.HashLength])
 		self.db.CompactRangeCF(self.cf_handles[state_db.COL_acc_trie_node], range32)
-		fmt.Printf("[prune] acc_trie_node: filter done. processed=%d deleted=%d\n", processedKeys, deleted)
 	}()
 	wg.Wait()
 }
 
 func (self *DB) Prune(state_root_to_keep []common.Hash, blk_num types.BlockNum) {
 	var wg sync.WaitGroup
-	fmt.Printf("[prune] Starting prune at blk=%d, roots_keep=%d\n", blk_num, len(state_root_to_keep))
 
 	// Asynchronously delete state values
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("[prune] Phase 1: delete acc_trie_value...\n")
 		self.deleteStateValues(blk_num)
 	}()
 
@@ -504,7 +441,6 @@ func (self *DB) Prune(state_root_to_keep []common.Hash, blk_num types.BlockNum) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("[prune] Phase 2: recreate main_trie_node...\n")
 		self.recreateMainTrie(&state_root_to_keep, blk_num)
 	}()
 
@@ -512,12 +448,10 @@ func (self *DB) Prune(state_root_to_keep []common.Hash, blk_num types.BlockNum) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("[prune] Phase 3: prune main_trie_value + rebuild acc_trie_node...\n")
 		self.deleteStateRoot(blk_num)
 	}()
 
 	wg.Wait()
-	fmt.Printf("[prune] Completed prune at blk=%d\n", blk_num)
 }
 
 func (self *DB) Close() {
