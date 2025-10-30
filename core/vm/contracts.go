@@ -28,6 +28,8 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
+	"github.com/pornin/go-fn-dsa/fndsa"
+
 	"golang.org/x/crypto/ripemd160"
 
 	"github.com/Taraxa-project/taraxa-evm/common"
@@ -104,6 +106,29 @@ var PrecompiledContractsFicus = Precompiles{
 	&bls12381Pairing{},    // Position 17, address 0x11
 	&bls12381MapG1{},      // Position 18, address 0x12
 	&bls12381MapG2{},      // Position 19, address 0x13
+}
+
+var PrecompiledContractsCacti = Precompiles{
+	&ecrecover{},          // Position 1, address 0x01
+	&sha256hash{},         // Position 2, address 0x02
+	&ripemd160hash{},      // Position 3, address 0x03
+	&dataCopy{},           // Position 4, address 0x04
+	&bigModExp{},          // Position 5, address 0x05
+	&bn256Add{},           // Position 6, address 0x06
+	&bn256ScalarMul{},     // Position 7, address 0x07
+	&bn256Pairing{},       // Position 8, address 0x08
+	&blake2F{},            // Position 9, address 0x09
+	nil,                   // Position 10, address 0x0a (&kzgPointEvaluation{})
+	&bls12381G1Add{},      // Position 11, address 0x0b
+	&bls12381G1Mul{},      // Position 12, address 0x0c
+	&bls12381G1MultiExp{}, // Position 13, address 0x0d
+	&bls12381G2Add{},      // Position 14, address 0x0e
+	&bls12381G2Mul{},      // Position 15, address 0x0f
+	&bls12381G2MultiExp{}, // Position 16, address 0x10
+	&bls12381Pairing{},    // Position 17, address 0x11
+	&bls12381MapG1{},      // Position 18, address 0x12
+	&bls12381MapG2{},      // Position 19, address 0x13
+	&falcon512{},          // Position 20, address 0x14
 }
 
 // ECRECOVER implemented as a native contract.
@@ -950,4 +975,99 @@ func (c bls12381MapG2) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return encodePointG2(&r), nil
+}
+
+// FALCON512 implementation precompile
+type falcon512 struct{}
+
+func (c *falcon512) RequiredGas(ctx CallFrame, evm *EVM) uint64 {
+	return uint64(len(ctx.Input)+31)/32*Falcon512PerWordGas + Falcon512BaseGas
+}
+
+const (
+	falcon512MethodSignature = 0xde8f50a1 // verify(bytes,bytes,bytes)
+)
+
+var (
+	// fndsa exposes fixed sizes per degree; compute them at init to avoid hardcoding.
+	falcon512LogN      uint = 9 // 2^9 = 512
+	falcon512SigLen         = fndsa.SignatureSize(falcon512LogN)
+	falcon512PubKeyLen      = fndsa.VerifyingKeySize(falcon512LogN)
+
+	errFalcon512InvalidMethodSignatureLength = errors.New("invalid input format")
+	errFalconInvalidMethodSignature          = errors.New("invalid method signature")
+)
+
+// returns bytes32(0) if signature is valid, bytes32(1) otherwise
+func (c *falcon512) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
+	input := ctx.Input
+
+	// 32-byte digest per your convention: 0x...01 means invalid; 0x...00 means valid
+	digest := make([]byte, 32)
+	digest[31] = 1
+
+	if len(input) < 4 { // verifies method signature
+		return nil, errFalcon512InvalidMethodSignatureLength
+	}
+	if binary.BigEndian.Uint32(getData(input, 0, 4)) != uint32(falcon512MethodSignature) {
+		return nil, errFalconInvalidMethodSignature
+	}
+
+	input = getData(input, 4, uint64(len(input)))
+	if len(input) < 96 {
+		return digest, nil
+	}
+
+	signatureOffset := new(big.Int).SetBytes(getData(input, 0, 32)).Uint64()
+	pubKeyOffset := new(big.Int).SetBytes(getData(input, 32, 32)).Uint64()
+	dataOffset := new(big.Int).SetBytes(getData(input, 64, 32)).Uint64()
+
+	if signatureOffset == 0 || pubKeyOffset == 0 || dataOffset == 0 {
+		return digest, nil
+	}
+
+	// --- signature ---
+	if len(input) < int(signatureOffset)+32 {
+		return digest, nil
+	}
+	signatureLength := new(big.Int).SetBytes(getData(input, signatureOffset, 32)).Uint64()
+	if signatureLength == 0 || len(input) < int(signatureOffset)+32+int(signatureLength) {
+		return digest, nil
+	}
+	signatureSlice := getData(input, signatureOffset+32, signatureLength)
+	// Enforce fixed-size FN-DSA-512 signatures.
+	if int(signatureLength) != falcon512SigLen {
+		return digest, nil
+	}
+
+	// --- public key ---
+	if len(input) < int(pubKeyOffset)+32 {
+		return digest, nil
+	}
+	pubKeyLength := new(big.Int).SetBytes(getData(input, pubKeyOffset, 32)).Uint64()
+	if pubKeyLength == 0 || len(input) < int(pubKeyOffset)+32+int(pubKeyLength) {
+		return digest, nil
+	}
+	pubKeySlice := getData(input, pubKeyOffset+32, pubKeyLength)
+	// Enforce fixed-size FN-DSA-512 verifying key.
+	if int(pubKeyLength) != falcon512PubKeyLen {
+		return digest, nil
+	}
+
+	// --- message data (raw; no prehash) ---
+	if len(input) < int(dataOffset)+32 {
+		return digest, nil
+	}
+	dataLength := new(big.Int).SetBytes(getData(input, dataOffset, 32)).Uint64()
+	if dataLength == 0 || len(input) < int(dataOffset)+32+int(dataLength) {
+		return digest, nil
+	}
+	dataSlice := getData(input, dataOffset+32, dataLength)
+
+	// Pure-Go FN-DSA verify (ctx = NONE, id = 0 => raw message).
+	ok := fndsa.Verify(pubKeySlice, fndsa.DOMAIN_NONE, 0, dataSlice, signatureSlice)
+	if ok {
+		digest[31] = 0
+	}
+	return digest, nil
 }

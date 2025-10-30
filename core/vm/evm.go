@@ -162,7 +162,7 @@ func (self *EVM) SetBlock(blk *Block, rules Rules) (rules_changed bool) {
 	}
 	switch {
 	case rules.IsCacti:
-		self.precompiles = PrecompiledContractsFicus
+		self.precompiles = PrecompiledContractsCacti
 		self.instruction_set = cactiInstructionSet
 		self.gas_table = GasTableCalifornicum
 	case rules.IsFicus:
