@@ -369,7 +369,6 @@ func BenchmarkPrecompiledP256Verify(bench *testing.B) {
 }
 
 func TestPrecompiledP256Verify(t *testing.T) { testJson("p256Verify", "0x100", t) }
-
 // EIP-7213 test vectors
 var falcon512MalformedInputTests = []precompiledFailureTest{
 	{
