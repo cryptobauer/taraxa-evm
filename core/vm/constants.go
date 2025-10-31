@@ -83,6 +83,8 @@ const (
 	Bls12381MapG1Gas          uint64 = 5500   // Gas price for BLS12-381 mapping field element to G1 operation
 	Bls12381MapG2Gas          uint64 = 110000 // Gas price for BLS12-381 mapping field element to G2 operation
 
+	P256VerifyGas uint64 = 6900 // secp256r1 elliptic curve signature verifier gas price
+
 	// Postquantum Gas costs
 	// Falcon-512
 	Falcon512BaseGas    uint64 = 1465 // Once per FALCON-512 signature validation

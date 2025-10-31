@@ -17,7 +17,6 @@
 package vm
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -36,7 +35,7 @@ import (
 	"github.com/Taraxa-project/taraxa-evm/common/math"
 	"github.com/Taraxa-project/taraxa-evm/crypto"
 	"github.com/Taraxa-project/taraxa-evm/crypto/bn256"
-	"github.com/Taraxa-project/taraxa-evm/taraxa/util/asserts"
+	"github.com/Taraxa-project/taraxa-evm/crypto/secp256r1"
 	"github.com/Taraxa-project/taraxa-evm/taraxa/util/keccak256"
 )
 
@@ -48,87 +47,74 @@ type PrecompiledContract interface {
 	Run(ctx CallFrame, evm *EVM) ([]byte, error)
 }
 
-type Precompiles [255]PrecompiledContract
+type Precompiles map[common.Address]PrecompiledContract
 
 var PrecompiledContractAddrPrefix = make([]byte, common.AddressLength-1)
 
 func (self *Precompiles) Get(address *common.Address) (ret PrecompiledContract) {
-	last_byte := address[common.AddressLength-1]
-	if last_byte == 0 {
-		return
-	}
-	ret = self[last_byte-1]
-	if ret != nil && !bytes.Equal(address[:common.AddressLength-1], PrecompiledContractAddrPrefix) {
-		ret = nil
-	}
+	ret, _ = (*self)[*address]
 	return
 }
 
 func (self *Precompiles) Put(address *common.Address, contract PrecompiledContract) {
-	asserts.Holds(bytes.Equal(address[:common.AddressLength-1], PrecompiledContractAddrPrefix))
-	last_addr_byte := address[common.AddressLength-1]
-	asserts.Holds(last_addr_byte != 0)
-	pos := last_addr_byte - 1
-	asserts.Holds(self[pos] == nil)
-	self[pos] = contract
+	(*self)[*address] = contract
 }
 
 // PrecompiledContractsCalifornicum contains the default set of pre-compiled Ethereum
 // contracts used in the Californicum release.
 var PrecompiledContractsCalifornicum = Precompiles{
-	&ecrecover{},      // Position 1, address 0x01
-	&sha256hash{},     // Position 2, address 0x02
-	&ripemd160hash{},  // Position 3, address 0x03
-	&dataCopy{},       // Position 4, address 0x04
-	&bigModExp{},      // Position 5, address 0x05
-	&bn256Add{},       // Position 6, address 0x06
-	&bn256ScalarMul{}, // Position 7, address 0x07
-	&bn256Pairing{},   // Position 8, address 0x08
+	common.BytesToAddress([]byte{0x01}): &ecrecover{},
+	common.BytesToAddress([]byte{0x02}): &sha256hash{},
+	common.BytesToAddress([]byte{0x03}): &ripemd160hash{},
+	common.BytesToAddress([]byte{0x04}): &dataCopy{},
+	common.BytesToAddress([]byte{0x05}): &bigModExp{},
+	common.BytesToAddress([]byte{0x06}): &bn256Add{},
+	common.BytesToAddress([]byte{0x07}): &bn256ScalarMul{},
+	common.BytesToAddress([]byte{0x08}): &bn256Pairing{},
 }
 
 var PrecompiledContractsFicus = Precompiles{
-	&ecrecover{},          // Position 1, address 0x01
-	&sha256hash{},         // Position 2, address 0x02
-	&ripemd160hash{},      // Position 3, address 0x03
-	&dataCopy{},           // Position 4, address 0x04
-	&bigModExp{},          // Position 5, address 0x05
-	&bn256Add{},           // Position 6, address 0x06
-	&bn256ScalarMul{},     // Position 7, address 0x07
-	&bn256Pairing{},       // Position 8, address 0x08
-	&blake2F{},            // Position 9, address 0x09
-	nil,                   // Position 10, address 0x0a (&kzgPointEvaluation{})
-	&bls12381G1Add{},      // Position 11, address 0x0b
-	&bls12381G1Mul{},      // Position 12, address 0x0c
-	&bls12381G1MultiExp{}, // Position 13, address 0x0d
-	&bls12381G2Add{},      // Position 14, address 0x0e
-	&bls12381G2Mul{},      // Position 15, address 0x0f
-	&bls12381G2MultiExp{}, // Position 16, address 0x10
-	&bls12381Pairing{},    // Position 17, address 0x11
-	&bls12381MapG1{},      // Position 18, address 0x12
-	&bls12381MapG2{},      // Position 19, address 0x13
+	common.BytesToAddress([]byte{0x01}): &ecrecover{},
+	common.BytesToAddress([]byte{0x02}): &sha256hash{},
+	common.BytesToAddress([]byte{0x03}): &ripemd160hash{},
+	common.BytesToAddress([]byte{0x04}): &dataCopy{},
+	common.BytesToAddress([]byte{0x05}): &bigModExp{},
+	common.BytesToAddress([]byte{0x06}): &bn256Add{},
+	common.BytesToAddress([]byte{0x07}): &bn256ScalarMul{},
+	common.BytesToAddress([]byte{0x08}): &bn256Pairing{},
+	common.BytesToAddress([]byte{0x09}): &blake2F{},
+	// common.BytesToAddress([]byte{0x0a}): &kzgPointEvaluation{},
+	common.BytesToAddress([]byte{0x0b}): &bls12381G1Add{},
+	common.BytesToAddress([]byte{0x0c}): &bls12381G1Mul{},
+	common.BytesToAddress([]byte{0x0d}): &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{0x0e}): &bls12381G2Add{},
+	common.BytesToAddress([]byte{0x0f}): &bls12381G2Mul{},
+	common.BytesToAddress([]byte{0x10}): &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{0x11}): &bls12381Pairing{},
+	common.BytesToAddress([]byte{0x12}): &bls12381MapG1{},
+	common.BytesToAddress([]byte{0x13}): &bls12381MapG2{},
 }
 
 var PrecompiledContractsCacti = Precompiles{
-	&ecrecover{},          // Position 1, address 0x01
-	&sha256hash{},         // Position 2, address 0x02
-	&ripemd160hash{},      // Position 3, address 0x03
-	&dataCopy{},           // Position 4, address 0x04
-	&bigModExp{},          // Position 5, address 0x05
-	&bn256Add{},           // Position 6, address 0x06
-	&bn256ScalarMul{},     // Position 7, address 0x07
-	&bn256Pairing{},       // Position 8, address 0x08
-	&blake2F{},            // Position 9, address 0x09
-	nil,                   // Position 10, address 0x0a (&kzgPointEvaluation{})
-	&bls12381G1Add{},      // Position 11, address 0x0b
-	&bls12381G1Mul{},      // Position 12, address 0x0c
-	&bls12381G1MultiExp{}, // Position 13, address 0x0d
-	&bls12381G2Add{},      // Position 14, address 0x0e
-	&bls12381G2Mul{},      // Position 15, address 0x0f
-	&bls12381G2MultiExp{}, // Position 16, address 0x10
-	&bls12381Pairing{},    // Position 17, address 0x11
-	&bls12381MapG1{},      // Position 18, address 0x12
-	&bls12381MapG2{},      // Position 19, address 0x13
-	&falcon512{},          // Position 20, address 0x14
+	common.BytesToAddress([]byte{0x01}): &ecrecover{},
+	common.BytesToAddress([]byte{0x02}): &sha256hash{},
+	common.BytesToAddress([]byte{0x03}): &ripemd160hash{},
+	common.BytesToAddress([]byte{0x04}): &dataCopy{},
+	common.BytesToAddress([]byte{0x05}): &bigModExp{},
+	common.BytesToAddress([]byte{0x06}): &bn256Add{},
+	common.BytesToAddress([]byte{0x07}): &bn256ScalarMul{},
+	common.BytesToAddress([]byte{0x08}): &bn256Pairing{},
+	common.BytesToAddress([]byte{0x09}): &blake2F{},
+	// common.BytesToAddress([]byte{0x0a}): &kzgPointEvaluation{},
+	common.BytesToAddress([]byte{0x0b}):      &bls12381G1Add{},
+	common.BytesToAddress([]byte{0x0c}):      &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{0x0d}):      &bls12381G2Add{},
+	common.BytesToAddress([]byte{0x0e}):      &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{0x0f}):      &bls12381Pairing{},
+	common.BytesToAddress([]byte{0x10}):      &bls12381MapG1{},
+	common.BytesToAddress([]byte{0x11}):      &bls12381MapG2{},
+	common.BytesToAddress([]byte{0x14}):      &falcon512{},
+	common.BytesToAddress([]byte{0x1, 0x00}): &p256Verify{},
 }
 
 // ECRECOVER implemented as a native contract.
@@ -975,6 +961,35 @@ func (c bls12381MapG2) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return encodePointG2(&r), nil
+}
+
+// P256VERIFY (secp256r1 signature verification)
+// implemented as a native contract
+type p256Verify struct{}
+
+// RequiredGas returns the gas required to execute the precompiled contract
+func (c *p256Verify) RequiredGas(ctx CallFrame, evm *EVM) uint64 {
+	return P256VerifyGas
+}
+
+// Run executes the precompiled contract with given 160 bytes of param, returning the output and the used gas
+func (c *p256Verify) Run(ctx CallFrame, evm *EVM) ([]byte, error) {
+	input := ctx.Input
+	const p256VerifyInputLength = 160
+	if len(input) != p256VerifyInputLength {
+		return nil, nil
+	}
+
+	// Extract hash, r, s, x, y from the input.
+	hash := input[0:32]
+	r, s := new(big.Int).SetBytes(input[32:64]), new(big.Int).SetBytes(input[64:96])
+	x, y := new(big.Int).SetBytes(input[96:128]), new(big.Int).SetBytes(input[128:160])
+
+	// Verify the signature.
+	if secp256r1.Verify(hash, r, s, x, y) {
+		return true32Byte, nil
+	}
+	return nil, nil
 }
 
 // FALCON512 implementation precompile
