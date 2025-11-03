@@ -51,13 +51,12 @@ type Precompiles map[common.Address]PrecompiledContract
 
 var PrecompiledContractAddrPrefix = make([]byte, common.AddressLength-1)
 
-func (self *Precompiles) Get(address *common.Address) (ret PrecompiledContract) {
-	ret, _ = (*self)[*address]
-	return
+func (p *Precompiles) Get(address *common.Address) PrecompiledContract {
+	return (*p)[*address]
 }
 
-func (self *Precompiles) Put(address *common.Address, contract PrecompiledContract) {
-	(*self)[*address] = contract
+func (p *Precompiles) Put(address *common.Address, contract PrecompiledContract) {
+	(*p)[*address] = contract
 }
 
 // PrecompiledContractsCalifornicum contains the default set of pre-compiled Ethereum
@@ -105,16 +104,16 @@ var PrecompiledContractsCacti = Precompiles{
 	common.BytesToAddress([]byte{0x07}): &bn256ScalarMul{},
 	common.BytesToAddress([]byte{0x08}): &bn256Pairing{},
 	common.BytesToAddress([]byte{0x09}): &blake2F{},
-	// common.BytesToAddress([]byte{0x0a}): &kzgPointEvaluation{},
-	common.BytesToAddress([]byte{0x0b}):      &bls12381G1Add{},
-	common.BytesToAddress([]byte{0x0c}):      &bls12381G1MultiExp{},
-	common.BytesToAddress([]byte{0x0d}):      &bls12381G2Add{},
-	common.BytesToAddress([]byte{0x0e}):      &bls12381G2MultiExp{},
-	common.BytesToAddress([]byte{0x0f}):      &bls12381Pairing{},
-	common.BytesToAddress([]byte{0x10}):      &bls12381MapG1{},
-	common.BytesToAddress([]byte{0x11}):      &bls12381MapG2{},
-	common.BytesToAddress([]byte{0x14}):      &falcon512{},
-	common.BytesToAddress([]byte{0x1, 0x00}): &p256Verify{},
+	//common.BytesToAddress([]byte{0x0a}):       &kzgPointEvaluation{},
+	common.BytesToAddress([]byte{0x0b}):       &bls12381G1Add{},
+	common.BytesToAddress([]byte{0x0c}):       &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{0x0d}):       &bls12381G2Add{},
+	common.BytesToAddress([]byte{0x0e}):       &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{0x0f}):       &bls12381Pairing{},
+	common.BytesToAddress([]byte{0x10}):       &bls12381MapG1{},
+	common.BytesToAddress([]byte{0x11}):       &bls12381MapG2{},
+	common.BytesToAddress([]byte{0x1, 0x00}):  &p256Verify{},
+	common.BytesToAddress([]byte{0xfa, 0x1c}): &falcon512{},
 }
 
 // ECRECOVER implemented as a native contract.
