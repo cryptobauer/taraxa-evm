@@ -66,7 +66,7 @@ func (api *API) Init(cfg chain_config.ChainConfig) *API {
 
 	var yield_curve YieldCurve
 	yield_curve.Init(cfg)
-	_, yield := yield_curve.CalculateBlockReward(uint256.NewInt(0), total_supply_uin256)
+	_, yield := yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), uint256.NewInt(0), total_supply_uin256)
 
 	decimal_precision := uint256.NewInt(1e4)
 	ideal_yield := new(uint256.Int).Mul(uint256.NewInt(20), decimal_precision) // 20%

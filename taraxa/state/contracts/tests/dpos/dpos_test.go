@@ -207,6 +207,7 @@ func sign(hash []byte, prv *ecdsa.PrivateKey) ([]byte, error) {
 func NewRewardsStats(author *common.Address) rewards_stats.RewardsStats {
 	rewardsStats := rewards_stats.RewardsStats{}
 	rewardsStats.BlockAuthor = *author
+	rewardsStats.BlocksPerYear = DefaultChainCfg.DPOS.BlocksPerYear
 	rewardsStats.ValidatorsStats = make(map[common.Address]rewards_stats.ValidatorStats)
 
 	return rewardsStats
@@ -958,7 +959,7 @@ func TestYieldCurveAspenHf(t *testing.T) {
 	total_stake := new(uint256.Int).Mul(uint256.NewInt(1e+9), uint256.NewInt(1e+18))
 	expected_yield := uint256.NewInt(200000)
 	expected_block_reward := calculateExpectedBlockReward(total_stake, expected_yield, cfg)
-	block_reward, yield := yield_curve.CalculateBlockReward(total_stake, total_supply)
+	block_reward, yield := yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake, total_supply)
 
 	tc.Assert.Equal(expected_block_reward, block_reward)
 	tc.Assert.Equal(expected_yield, yield)
@@ -967,7 +968,7 @@ func TestYieldCurveAspenHf(t *testing.T) {
 	total_supply = new(uint256.Int).Mul(uint256.NewInt(11e+9), uint256.NewInt(1e+18))
 	expected_yield = uint256.NewInt(90909)
 	expected_block_reward = calculateExpectedBlockReward(total_stake, expected_yield, cfg)
-	block_reward, yield = yield_curve.CalculateBlockReward(total_stake, total_supply)
+	block_reward, yield = yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake, total_supply)
 
 	tc.Assert.Equal(expected_block_reward, block_reward)
 	tc.Assert.Equal(expected_yield, yield)
@@ -976,7 +977,7 @@ func TestYieldCurveAspenHf(t *testing.T) {
 	total_supply = new(uint256.Int).Mul(uint256.NewInt(115e+8), uint256.NewInt(1e+18))
 	expected_yield = uint256.NewInt(43478)
 	expected_block_reward = calculateExpectedBlockReward(total_stake, expected_yield, cfg)
-	block_reward, yield = yield_curve.CalculateBlockReward(total_stake, total_supply)
+	block_reward, yield = yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake, total_supply)
 
 	tc.Assert.Equal(expected_block_reward, block_reward)
 	tc.Assert.Equal(expected_yield, yield)
@@ -985,7 +986,7 @@ func TestYieldCurveAspenHf(t *testing.T) {
 	total_supply = new(uint256.Int).Mul(uint256.NewInt(12e+9), uint256.NewInt(1e+18))
 	expected_yield = uint256.NewInt(0)
 	expected_block_reward = calculateExpectedBlockReward(total_stake, expected_yield, cfg)
-	block_reward, yield = yield_curve.CalculateBlockReward(total_stake, total_supply)
+	block_reward, yield = yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake, total_supply)
 
 	tc.Assert.Equal(expected_block_reward, block_reward)
 	tc.Assert.Equal(expected_yield, yield)
@@ -1066,7 +1067,7 @@ func TestAspenHf(t *testing.T) {
 	for block_n := test.BlockNumber(); block_n < cfg.Hardforks.AspenHf.BlockNumPartTwo+20; block_n++ {
 		total_supply_uin256, _ := uint256.FromBig(total_supply)
 		total_stake_uin256, _ := uint256.FromBig(total_stake)
-		expected_reward_uint256, _ := yield_curve.CalculateBlockReward(total_stake_uin256, total_supply_uin256)
+		expected_reward_uint256, _ := yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake_uin256, total_supply_uin256)
 		expected_reward := expected_reward_uint256.ToBig()
 
 		reward := test.AdvanceBlock(&validator1_addr, &tmp_rewards_stats)
@@ -1218,7 +1219,7 @@ func TestRewardsAndCommission(t *testing.T) {
 	// Expected block reward
 	var yield_curve dpos.YieldCurve
 	yield_curve.Init(cfg)
-	expected_block_reward_uint256, _ := yield_curve.CalculateBlockReward(total_stake_uin256, total_supply_uin256)
+	expected_block_reward_uint256, _ := yield_curve.CalculateBlockReward(uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear)), total_stake_uin256, total_supply_uin256)
 	expected_block_reward := expected_block_reward_uint256.ToBig()
 
 	// Splitting block rewards between votes and blocks
