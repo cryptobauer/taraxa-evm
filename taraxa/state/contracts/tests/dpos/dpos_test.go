@@ -992,6 +992,46 @@ func TestYieldCurveAspenHf(t *testing.T) {
 	tc.Assert.Equal(expected_yield, yield)
 }
 
+// Cacti hf introduced dynamic lambda, which means dynamic blocks per year for rewards calculation
+func TestDynamicBlocksPerYearRewardsCactiHf(t *testing.T) {
+	cfg := CopyDefaultChainConfig()
+	tc, test := test_utils.Init_test(dpos.ContractAddress(), dpos_sol.TaraxaDposClientMetaData, t, cfg)
+	defer test.End()
+
+	var yield_curve dpos.YieldCurve
+	yield_curve.Init(cfg)
+
+	// yield = (max supply - total supply) / total supply
+	// block reward = yield * total stake / blocks per year
+
+	// max supply has hardcoded value of 12 Billion TARA
+	// total supply = 10 Billion, total stake = 1 Billion, expected yield == 20%
+	total_supply := new(uint256.Int).Mul(uint256.NewInt(10e+9), uint256.NewInt(1e+18))
+	total_stake := new(uint256.Int).Mul(uint256.NewInt(1e+9), uint256.NewInt(1e+18))
+	expected_yield := uint256.NewInt(200000)
+	blocks_per_year := uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear))
+
+	expected_block_reward := calculateExpectedBlockReward(total_stake, expected_yield, cfg)
+	block_reward, yield := yield_curve.CalculateBlockReward(blocks_per_year, total_stake, total_supply)
+
+	tc.Assert.Equal(expected_block_reward, block_reward)
+	tc.Assert.Equal(expected_yield, yield)
+
+	// Double blocks per year, yield should stay the same and expected block rewards should be divided by /2
+	blocks_per_year.Mul(blocks_per_year, uint256.NewInt(2))
+	expected_block_reward.Div(expected_block_reward, uint256.NewInt(2))
+	block_reward, yield = yield_curve.CalculateBlockReward(blocks_per_year, total_stake, total_supply)
+	tc.Assert.Equal(expected_block_reward, block_reward)
+	tc.Assert.Equal(expected_yield, yield)
+
+	// Triple blocks per year, yield should stay the same and expected block rewards should be divided by 3
+	blocks_per_year.Mul(blocks_per_year, uint256.NewInt(3))
+	expected_block_reward.Div(expected_block_reward, uint256.NewInt(3))
+	block_reward, yield = yield_curve.CalculateBlockReward(blocks_per_year, total_stake, total_supply)
+	tc.Assert.Equal(expected_block_reward, block_reward)
+	tc.Assert.Equal(expected_yield, yield)
+}
+
 func calculateExpectedBlockReward(total_stake *uint256.Int, expected_yield *uint256.Int, cfg chain_config.ChainConfig) *uint256.Int {
 	expected_block_reward := new(uint256.Int).Mul(total_stake, expected_yield)
 	expected_block_reward.Div(expected_block_reward, new(uint256.Int).Mul(dpos.YieldFractionDecimalPrecision, uint256.NewInt(uint64(cfg.DPOS.BlocksPerYear))))
