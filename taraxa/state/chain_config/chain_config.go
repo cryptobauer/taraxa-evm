@@ -56,6 +56,7 @@ type CactiHfConfig struct {
 	LambdaChange         uint32 // [ms]
 	BlockPropagationMin  uint32 // [ms]
 	BlockPropagationMax  uint32 // [ms]
+	ConsensusDelay       uint32 // [ms]
 }
 
 // Leaving it here for next HF
