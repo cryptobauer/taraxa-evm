@@ -893,7 +893,15 @@ func (self *Contract) DistributeRewards(rewardsStats *rewards_stats.RewardsStats
 	current_block_num := self.evm.GetBlock().Number
 	// Aspen hf introduces dynamic yield curve, see https://github.com/Taraxa-project/TIP/blob/main/TIP-2/TIP-2%20-%20Cap%20TARA's%20Total%20Supply.md
 	if self.cfg.Hardforks.IsOnAspenHardforkPartTwo(current_block_num) {
-		blockReward = self.processBlockReward(current_block_num, uint256.NewInt(uint64(rewardsStats.BlocksPerYear)))
+		blocksPerYear := new(uint256.Int)
+		// Cacti hardfork introduced dynamic lambda, which affects block_per_year (can potentially change with every block)
+		if self.cfg.Hardforks.IsOnCactiHardfork(current_block_num) {
+			blocksPerYear = uint256.NewInt(uint64(rewardsStats.BlocksPerYear))
+		} else {
+			blocksPerYear = uint256.NewInt(uint64(self.cfg.DPOS.BlocksPerYear))
+		}
+
+		blockReward = self.processBlockReward(current_block_num, blocksPerYear)
 	} else {
 		// Original fixed yield curve
 		blockReward.Mul(self.amount_delegated, self.yield_percentage)
