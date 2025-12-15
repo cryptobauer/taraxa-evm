@@ -81,6 +81,18 @@ var (
 				TrxMinGasPrice: 1,
 				TrxMaxGasLimit: 1,
 			},
+			CactiHf: chain_config.CactiHfConfig{
+				BlockNum:                2000,
+				LambdaMin:               500,
+				LambdaMax:               1500,
+				LambdaDefault:           2000,
+				LambdaChangeInterval:    300,
+				LambdaChange:            10,
+				BlockPropagationMin:     4000,
+				BlockPropagationMax:     17000,
+				ConsensusDelay:          400,
+				DelegationLockingPeriod: 5,
+			},
 		},
 	}
 )

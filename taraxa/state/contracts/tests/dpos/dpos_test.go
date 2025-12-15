@@ -137,6 +137,18 @@ var (
 				TrxMinGasPrice: 1,
 				TrxMaxGasLimit: 1,
 			},
+			CactiHf: chain_config.CactiHfConfig{
+				BlockNum:                2000,
+				LambdaMin:               500,
+				LambdaMax:               1500,
+				LambdaDefault:           2000,
+				LambdaChangeInterval:    300,
+				LambdaChange:            10,
+				BlockPropagationMin:     4000,
+				BlockPropagationMax:     17000,
+				ConsensusDelay:          400,
+				DelegationLockingPeriod: 5,
+			},
 		},
 	}
 )
@@ -679,10 +691,12 @@ func TestCornusHardfork(t *testing.T) {
 	tc.Assert.Equal(confirm_res2.Logs[0].Topics[0], UndelegateConfirmedV2EventHash)
 }
 
-func TestCornusHardforkLockingPeriod(t *testing.T) {
+func TestCornusAndCactiHardforkLockingPeriod(t *testing.T) {
 	cfg := CopyDefaultChainConfig()
 	cfg.Hardforks.CornusHf.BlockNum = 5
 	cfg.Hardforks.CornusHf.DelegationLockingPeriod = 100
+	cfg.Hardforks.CactiHf.BlockNum = 10
+	cfg.Hardforks.CactiHf.DelegationLockingPeriod = 50
 	tc, test := test_utils.Init_test(dpos.ContractAddress(), dpos_sol.TaraxaDposClientMetaData, t, cfg)
 	defer test.End()
 
@@ -720,6 +734,23 @@ func TestCornusHardforkLockingPeriod(t *testing.T) {
 	test.Unpack(get_undelegation2_parsed_result, "getUndelegationV2", get_undelegation2_result.CodeRetval)
 	tc.Assert.Equal(undelegate2_expected_id, get_undelegation2_parsed_result.UndelegationV2.UndelegationId)
 	tc.Assert.Equal(undelegate2_expected_lockup_block, get_undelegation2_parsed_result.UndelegationV2.UndelegationData.Block)
+
+	// Pass cacti hardfork
+	tc.Assert.Less(test.BlockNumber(), cfg.Hardforks.CactiHf.BlockNum)
+	for i := test.BlockNumber(); i < cfg.Hardforks.CactiHf.BlockNum; i++ {
+		test.AdvanceBlock(nil, nil)
+	}
+
+	// Create undelegation after cacti hardfork
+	test.ExecuteAndCheck(val_owner, big.NewInt(0), test.Pack("undelegateV2", val_addr, DefaultMinimumDeposit), util.ErrorString(""), util.ErrorString(""))
+	undelegate3_expected_id := uint64(2)
+	undelegate3_expected_lockup_block := test.BlockNumber() + uint64(cfg.Hardforks.CactiHf.DelegationLockingPeriod)
+
+	get_undelegation3_result := test.ExecuteAndCheck(val_owner, big.NewInt(0), test.Pack("getUndelegationV2", val_owner, val_addr, undelegate3_expected_id), util.ErrorString(""), util.ErrorString(""))
+	get_undelegation3_parsed_result := new(GetUndelegationV2Ret)
+	test.Unpack(get_undelegation3_parsed_result, "getUndelegationV2", get_undelegation3_result.CodeRetval)
+	tc.Assert.Equal(undelegate3_expected_id, get_undelegation3_parsed_result.UndelegationV2.UndelegationId)
+	tc.Assert.Equal(undelegate3_expected_lockup_block, get_undelegation3_parsed_result.UndelegationV2.UndelegationData.Block)
 }
 
 func TestConfirmUndelegate(t *testing.T) {

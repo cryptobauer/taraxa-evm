@@ -1198,9 +1198,12 @@ func (self *Contract) undelegate(ctx vm.CallFrame, block types.BlockNum, args dp
 		self.validators.ModifyValidatorRewards(&args.Validator, validator_rewards)
 	}
 
-	delegationLockingPeriod := uint64(self.cfg.Hardforks.CornusHf.DelegationLockingPeriod)
-	if !self.cfg.Hardforks.IsOnCornusHardfork(block) {
-		delegationLockingPeriod = uint64(self.cfg.DPOS.DelegationLockingPeriod)
+	delegationLockingPeriod := uint64(self.cfg.DPOS.DelegationLockingPeriod)
+	// cacti hardfork is newer hf - it has higher priority than cornus
+	if self.cfg.Hardforks.IsOnCactiHardfork(block) {
+		delegationLockingPeriod = uint64(self.cfg.Hardforks.CactiHf.DelegationLockingPeriod)
+	} else if self.cfg.Hardforks.IsOnCornusHardfork(block) {
+		delegationLockingPeriod = uint64(self.cfg.Hardforks.CornusHf.DelegationLockingPeriod)
 	}
 
 	// Create undelegation request
