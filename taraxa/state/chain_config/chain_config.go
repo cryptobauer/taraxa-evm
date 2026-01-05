@@ -58,6 +58,7 @@ type CactiHfConfig struct {
 	BlockPropagationMax     uint32 // [ms]
 	ConsensusDelay          uint32 // [ms]
 	DelegationLockingPeriod uint32 // [number of blocks]
+	JailTime                uint64 // [number of blocks]
 }
 
 // Leaving it here for next HF
